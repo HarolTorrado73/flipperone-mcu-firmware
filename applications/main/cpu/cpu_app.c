@@ -1,11 +1,13 @@
 #include "cpu_app.h"
 #include <furi.h>
+#include <furi_bsp.h>
+#include <furi_hal_resources.h>
 #include <furi_bsp_linux.h>
 #include <gui/gui.h>
 #include <gui/clay_helper.h>
 #include <gui/modules/popup_menu.h>
 #include <drivers/display/display_jd9853_reg.h>
-#include <drivers/spi_get_frame/spi_get_frame.h>
+#include <drivers/pio_get_frame/pio_get_frame.h>
 #include <assets.h>
 #include <pd/pd.h>
 #include <power/power.h>
@@ -52,7 +54,7 @@ typedef struct {
     PopupMenu* menu;
     FuriEventLoop* event_loop;
     FuriMessageQueue* app_queue;
-    SpiGetFrame* spi_get_frame;
+    PioGetFrame* pio_get_frame;
     size_t skip_frames;
 } CpuApp;
 
@@ -139,7 +141,7 @@ static void cpu_app_model_apply(CpuApp* instance, bool (*callback)(CpuAppModel* 
     with_view_model(instance->display_view, CpuAppModel * model, { update = callback(model, context); }, update);
 }
 
-static void __isr __not_in_flash_func(cpu_app_spi_get_frame_isr)(uint8_t* data, size_t size, void* context) {
+static void __isr __not_in_flash_func(cpu_app_pio_get_frame_isr)(uint8_t* data, size_t size, void* context) {
     CpuApp* instance = context;
 
     CpuAppMessage message = {
@@ -231,9 +233,10 @@ static CpuApp* cpu_app_alloc(void) {
     instance->gui = furi_record_open(RECORD_GUI);
     instance->event_loop = furi_event_loop_alloc();
     instance->app_queue = furi_message_queue_alloc(CPU_APP_MESSAGE_QUEUE_SIZE, sizeof(CpuAppMessage));
+    instance->skip_frames = 0; /* must be initialized — malloc does not zero memory */
 
-    instance->spi_get_frame = spi_get_frame_init();
-    spi_get_frame_set_callback_rx(instance->spi_get_frame, cpu_app_spi_get_frame_isr, instance);
+    instance->pio_get_frame = pio_get_frame_init(&gpio_cpu_spi_cs, &gpio_cpu_spi_sck, &gpio_cpu_spi_mosi);
+    pio_get_frame_set_callback_rx(instance->pio_get_frame, cpu_app_pio_get_frame_isr, instance);
 
     furi_event_loop_subscribe_message_queue(instance->event_loop, instance->app_queue, FuriEventLoopEventIn, cpu_app_message_logic, instance);
 
@@ -271,7 +274,7 @@ static void cpu_app_free(CpuApp* instance) {
     furi_event_loop_unsubscribe(instance->event_loop, instance->app_queue);
     furi_event_loop_free(instance->event_loop);
     furi_message_queue_free(instance->app_queue);
-    spi_get_frame_deinit(instance->spi_get_frame);
+    pio_get_frame_deinit(instance->pio_get_frame);
     free(instance);
 }
 
