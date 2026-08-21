@@ -1,0 +1,14 @@
+#pragma once
+#include <furi_bsp_display_backlight.h>
+#include <furi_bsp_expander.h>
+#include <furi_bsp_vci.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void furi_bsp_init(void);
+
+#ifdef __cplusplus
+}
+#endif
